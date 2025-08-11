@@ -1,59 +1,49 @@
-﻿using Soenneker.Utils.CancellationScopes.Abstract;
+﻿using Soenneker.Utils.AtomicResources;
+using Soenneker.Utils.CancellationScopes.Abstract;
 using System.Threading;
 using System.Threading.Tasks;
+using Soenneker.Extensions.Task;
 
 namespace Soenneker.Utils.CancellationScopes;
 
 ///<inheritdoc cref="ICancellationScope"/>
 public sealed class CancellationScope : ICancellationScope
 {
-    private CancellationTokenSource? _cts;
-    private volatile bool _disposed;
+    private readonly AtomicResource<CancellationTokenSource> _atomic;
 
-    public CancellationToken CancellationToken => _disposed ? CancellationToken.None : (_cts ??= new CancellationTokenSource()).Token;
-
-    public Task Cancel() => _cts is null ? Task.CompletedTask : _cts.CancelAsync();
-
-    public async ValueTask ResetCancellation()
+    public CancellationScope() : this(CancellationToken.None)
     {
-        if (_disposed)
-            return;
-
-        var fresh = new CancellationTokenSource();
-        CancellationTokenSource? old = Interlocked.Exchange(ref _cts, fresh);
-
-        if (old is not null)
-        {
-            try
-            {
-                await old.CancelAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-                /* ignore */
-            }
-
-            old.Dispose();
-        }
     }
 
-    public async ValueTask DisposeAsync()
+    /// <summary>Creates a scope whose CTS instances are linked to <paramref name="linkedToken"/>.</summary>
+    public CancellationScope(CancellationToken linkedToken)
     {
-        _disposed = true;
-        CancellationTokenSource? cts = Interlocked.Exchange(ref _cts, null);
+        _atomic = new AtomicResource<CancellationTokenSource>(
+            factory: () => linkedToken.CanBeCanceled ? CancellationTokenSource.CreateLinkedTokenSource(linkedToken) : new CancellationTokenSource(),
+            teardown: async cts =>
+            {
+                try
+                {
+                    await cts.CancelAsync().NoSync();
+                }
+                catch
+                {
+                    /* ignore */
+                }
 
-        if (cts is null)
-            return;
-
-        try
-        {
-            await cts.CancelAsync().ConfigureAwait(false);
-        }
-        catch
-        {
-            /* ignore */
-        }
-
-        cts.Dispose();
+                cts.Dispose();
+            });
     }
+
+    public CancellationToken CancellationToken => _atomic.GetOrCreate()?.Token ?? CancellationToken.None;
+
+    public Task Cancel()
+    {
+        CancellationTokenSource? cts = _atomic.TryGet();
+        return cts is null ? Task.CompletedTask : cts.CancelAsync();
+    }
+
+    public ValueTask ResetCancellation() => _atomic.Reset();
+
+    public ValueTask DisposeAsync() => _atomic.DisposeAsync();
 }
