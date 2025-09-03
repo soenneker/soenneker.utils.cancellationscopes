@@ -43,6 +43,6 @@
 
     <ItemGroup>
         <PackageReference Include="Soenneker.Extensions.Task" Version="3.0.105" />
-        <PackageReference Include="Soenneker.Utils.AtomicResources" Version="3.0.2" />
+        <PackageReference Include="Soenneker.Utils.AtomicResources" Version="3.0.3" />
     </ItemGroup>
 </Project>
