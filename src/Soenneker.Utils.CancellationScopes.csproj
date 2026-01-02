@@ -14,7 +14,7 @@
         <AssemblyName>Soenneker.Utils.CancellationScopes</AssemblyName>
         <PackageId>Soenneker.Utils.CancellationScopes</PackageId>
         <PackageTags>utils cancellationscopes cancellationtoken cancellationtokensource cancellation utility cancellationscope util csharp dotnet c# .net</PackageTags>
-        <Copyright>Copyright © 2025 Jake Soenneker</Copyright>
+        <Copyright>Copyright © 2025-2026 Jake Soenneker</Copyright>
         <Authors>Jake Soenneker</Authors>
         <Company>https://soenneker.com</Company>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
