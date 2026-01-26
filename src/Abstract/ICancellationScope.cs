@@ -34,7 +34,7 @@ public interface ICancellationScope : IAsyncDisposable
     /// subsequent calls to <see cref="CancellationToken"/> will return the 
     /// same (now canceled) token until <see cref="ResetCancellation"/> is invoked.
     /// </remarks>
-    Task Cancel();
+    void Cancel();
 
     /// <summary>
     /// Cancels the current <see cref="CancellationToken"/> (if any) and replaces it 
