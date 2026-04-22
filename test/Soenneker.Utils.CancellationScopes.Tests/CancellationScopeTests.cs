@@ -1,17 +1,16 @@
-﻿using Soenneker.Utils.CancellationScopes.Abstract;
-using Soenneker.Tests.FixturedUnit;
-using Xunit;
+using Soenneker.Utils.CancellationScopes.Abstract;
+using Soenneker.Tests.HostedUnit;
 
 namespace Soenneker.Utils.CancellationScopes.Tests;
 
-[Collection("Collection")]
-public sealed class CancellationScopeTests : FixturedUnitTest
+[ClassDataSource<Host>(Shared = SharedType.PerTestSession)]
+public sealed class CancellationScopeTests : HostedUnitTest
 {
-    public CancellationScopeTests(Fixture fixture, ITestOutputHelper output) : base(fixture, output)
+    public CancellationScopeTests(Host host) : base(host)
     {
     }
 
-    [Fact]
+    [Test]
     public void Default()
     {
 
