@@ -16,7 +16,6 @@ public sealed class CancellationScope : ICancellationScope
     {
     }
 
-    /// <summary>Creates a scope whose CTS instances are linked to <paramref name="linkedToken"/>.</summary>
     public CancellationScope(CancellationToken linkedToken)
     {
         _linkedToken = linkedToken;
@@ -48,6 +47,10 @@ public sealed class CancellationScope : ICancellationScope
 
     public ValueTask ResetCancellation() => _atomic.Reset();
 
+    /// <summary>
+    /// Asynchronously releases resources used by the current instance.
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     public ValueTask DisposeAsync() => _atomic.DisposeAsync();
 
     private CancellationTokenSource CreateCts()
