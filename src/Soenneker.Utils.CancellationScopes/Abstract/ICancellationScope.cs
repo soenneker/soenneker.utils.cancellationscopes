@@ -45,5 +45,6 @@ public interface ICancellationScope : IAsyncDisposable
     /// and immediately prepare for a new operation without lingering cancellation state.
     /// After disposal, this method should perform no action.
     /// </remarks>
+    /// <returns>Cancels the current <see cref="CancellationToken"/> (if any) and replaces it with a fresh <see cref="CancellationTokenSource"/> for new work.</returns>
     ValueTask ResetCancellation();
 }
