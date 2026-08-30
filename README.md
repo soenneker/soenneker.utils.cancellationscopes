@@ -3,8 +3,9 @@
 [![](https://img.shields.io/nuget/dt/soenneker.utils.cancellationscopes.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.utils.cancellationscopes/)
 [![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.utils.cancellationscopes/codeql.yml?label=CodeQL&style=for-the-badge)](https://github.com/soenneker/soenneker.utils.cancellationscopes/actions/workflows/codeql.yml)
 
-# ![](https://user-images.githubusercontent.com/4441470/224455560-91ed3ee7-f510-4041-a8d2-3fc093025112.png) Soenneker.Utils.CancellationScopes
-A lightweight library for creating, resetting, and cancelling CancellationToken instances in a thread-safe, reusable way.
+# Soenneker.Utils.CancellationScopes
+
+A thread-safe, reusable cancellation scope for replacing a token while cancelling work associated with the previous generation.
 
 ## Installation
 
@@ -12,16 +13,30 @@ A lightweight library for creating, resetting, and cancelling CancellationToken 
 dotnet add package Soenneker.Utils.CancellationScopes
 ```
 
-## Quick start
+## Usage
 
 ```csharp
-using Soenneker.Utils.CancellationScopes;
+await using var scope = new CancellationScope();
+
+Task firstRun = RunAsync(scope.CancellationToken);
+
+await scope.ResetCancellation(); // cancels firstRun's token and creates a fresh token
+
+Task secondRun = RunAsync(scope.CancellationToken);
 ```
 
-Create `CancellationScope` directly or depend on `ICancellationScope` in code that uses the abstraction.
+`CancellationToken` lazily creates the initial token source. `Cancel()` cancels the current token without replacing it, so later reads remain cancelled until `ResetCancellation()` is called.
 
-## Common operations
+To combine each generated token with an owning operation or application token, pass that token to the constructor:
 
-- `Cancel()` - Cancels any in-flight work associated with the current `CancellationToken`. This method is a no-op if no `CancellationTokenSource` has been created yet.
-- `ResetCancellation()` - Cancels the current `CancellationToken` (if any) and replaces it with a fresh `CancellationTokenSource` for new work. This method allows a consumer to cleanly cancel in-progress work and immediately prepare for a new operation without lingering cancellation state.
-- `DisposeAsync()` - Cancels the scope and asynchronously releases its cancellation resources.
+```csharp
+await using var scope = new CancellationScope(applicationStopping);
+```
+
+Every token generation remains linked to the constructor token. Once that parent is cancelled, resetting the scope cannot produce a non-cancelled token.
+
+## Lifetime
+
+Dispose the scope when its owner ends. Disposal cancels the current token source and releases it; subsequent token access returns `CancellationToken.None`, and reset becomes a no-op.
+
+Callers that retain an older token can still observe its cancellation after a reset. Resetting does not wait for operations using that token to finish.

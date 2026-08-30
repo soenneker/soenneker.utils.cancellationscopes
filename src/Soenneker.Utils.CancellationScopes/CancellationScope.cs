@@ -26,7 +26,7 @@ public sealed class CancellationScope : ICancellationScope
             teardown: Teardown);
     }
 
-    public CancellationToken CancellationToken => _atomic.GetOrCreate()!.Token;
+    public CancellationToken CancellationToken => _atomic.GetOrCreate()?.Token ?? System.Threading.CancellationToken.None;
 
     public void Cancel()
     {
