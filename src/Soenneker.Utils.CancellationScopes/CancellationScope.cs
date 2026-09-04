@@ -60,7 +60,9 @@ public sealed class CancellationScope : ICancellationScope
     {
         try
         {
-            cts.Cancel();
+            Task cancellation = cts.CancelAsync();
+            if (!cancellation.IsCompletedSuccessfully)
+                return AwaitCancellationAndDispose(cancellation, cts);
         }
         catch
         {
@@ -69,5 +71,21 @@ public sealed class CancellationScope : ICancellationScope
 
         cts.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private static async ValueTask AwaitCancellationAndDispose(Task cancellation, CancellationTokenSource cts)
+    {
+        try
+        {
+            await cancellation.ConfigureAwait(false);
+        }
+        catch
+        {
+            /* ignore */
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 }
