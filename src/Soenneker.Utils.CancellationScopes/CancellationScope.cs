@@ -1,16 +1,14 @@
-﻿using Soenneker.Utils.AtomicResources;
 using Soenneker.Utils.CancellationScopes.Abstract;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Soenneker.Utils.CancellationScopes;
 
-///<inheritdoc cref="ICancellationScope"/>
 public sealed class CancellationScope : ICancellationScope
 {
-    private readonly AtomicResource<CancellationTokenSource> _atomic;
+    private static readonly CancellationGeneration _disposed = new(null);
     private readonly CancellationToken _linkedToken;
-    private readonly bool _link;
+    private CancellationGeneration? _current;
 
     public CancellationScope() : this(CancellationToken.None)
     {
@@ -19,73 +17,69 @@ public sealed class CancellationScope : ICancellationScope
     public CancellationScope(CancellationToken linkedToken)
     {
         _linkedToken = linkedToken;
-        _link = linkedToken.CanBeCanceled;
-
-        _atomic = new AtomicResource<CancellationTokenSource>(
-            factory: CreateCts,
-            teardown: Teardown);
     }
 
-    public CancellationToken CancellationToken => _atomic.GetOrCreate()?.Token ?? System.Threading.CancellationToken.None;
+    public CancellationToken CancellationToken => (Volatile.Read(ref _current) ?? Initialize()).Token;
+
+    private CancellationGeneration Initialize()
+    {
+        CancellationGeneration created = CreateGeneration();
+        CancellationGeneration? existing = Interlocked.CompareExchange(ref _current, created, null);
+        if (existing is null)
+            return created;
+
+        // This candidate was never exposed. It only needs to release its parent
+        // registration; no application can have registered on its token.
+        created.Source!.Dispose();
+        return existing;
+    }
 
     public void Cancel()
     {
-        var cts = _atomic.TryGet();
-
-        if (cts is null || cts.IsCancellationRequested)
+        CancellationTokenSource? source = Volatile.Read(ref _current)?.Source;
+        if (source is null || source.IsCancellationRequested)
             return;
 
         try
         {
-            cts.Cancel();
+            source.Cancel();
         }
         catch
         {
-            /* ignore */
+            // Preserve best-effort cancellation, including concurrent teardown
+            // and exceptions from application cancellation callbacks.
         }
     }
 
-    public ValueTask ResetCancellation() => _atomic.Reset();
-
-    /// <summary>
-    /// Asynchronously releases resources used by the current instance.
-    /// </summary>
-    /// <returns>A task that represents the asynchronous operation.</returns>
-    public ValueTask DisposeAsync() => _atomic.DisposeAsync();
-
-    private CancellationTokenSource CreateCts()
-        => _link ? CancellationTokenSource.CreateLinkedTokenSource(_linkedToken) : new CancellationTokenSource();
-
-    private static ValueTask Teardown(CancellationTokenSource cts)
+    public ValueTask ResetCancellation()
     {
-        try
-        {
-            Task cancellation = cts.CancelAsync();
-            if (!cancellation.IsCompletedSuccessfully)
-                return AwaitCancellationAndDispose(cancellation, cts);
-        }
-        catch
-        {
-            /* ignore */
-        }
+        CancellationGeneration? previous = Volatile.Read(ref _current);
+        if (ReferenceEquals(previous, _disposed))
+            return ValueTask.CompletedTask;
 
-        cts.Dispose();
-        return ValueTask.CompletedTask;
+        CancellationGeneration created = CreateGeneration();
+        while (true)
+        {
+            CancellationGeneration? observed = Interlocked.CompareExchange(ref _current, created, previous);
+            if (ReferenceEquals(observed, previous))
+                return previous is null ? ValueTask.CompletedTask : CancellationTeardown.Run(previous.Source!);
+
+            previous = observed;
+            if (ReferenceEquals(previous, _disposed))
+            {
+                created.Source!.Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
-    private static async ValueTask AwaitCancellationAndDispose(Task cancellation, CancellationTokenSource cts)
+    public ValueTask DisposeAsync()
     {
-        try
-        {
-            await cancellation.ConfigureAwait(false);
-        }
-        catch
-        {
-            /* ignore */
-        }
-        finally
-        {
-            cts.Dispose();
-        }
+        CancellationGeneration? previous = Interlocked.Exchange(ref _current, _disposed);
+        return previous?.Source is { } source ? CancellationTeardown.Run(source) : ValueTask.CompletedTask;
     }
+
+    private CancellationGeneration CreateGeneration() => new(_linkedToken.CanBeCanceled
+        ? CancellationTokenSource.CreateLinkedTokenSource(_linkedToken)
+        : new CancellationTokenSource());
 }

@@ -1,0 +1,91 @@
+using Soenneker.Utils.AtomicResources;
+using Soenneker.Utils.CancellationScopes.Abstract;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Baseline;
+
+///<inheritdoc cref="ICancellationScope"/>
+public sealed class CancellationScope : ICancellationScope
+{
+    private readonly AtomicResource<CancellationTokenSource> _atomic;
+    private readonly CancellationToken _linkedToken;
+    private readonly bool _link;
+
+    public CancellationScope() : this(CancellationToken.None)
+    {
+    }
+
+    public CancellationScope(CancellationToken linkedToken)
+    {
+        _linkedToken = linkedToken;
+        _link = linkedToken.CanBeCanceled;
+
+        _atomic = new AtomicResource<CancellationTokenSource>(
+            factory: CreateCts,
+            teardown: Teardown);
+    }
+
+    public CancellationToken CancellationToken => _atomic.GetOrCreate()?.Token ?? System.Threading.CancellationToken.None;
+
+    public void Cancel()
+    {
+        var cts = _atomic.TryGet();
+
+        if (cts is null || cts.IsCancellationRequested)
+            return;
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+
+    public ValueTask ResetCancellation() => _atomic.Reset();
+
+    /// <summary>
+    /// Asynchronously releases resources used by the current instance.
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public ValueTask DisposeAsync() => _atomic.DisposeAsync();
+
+    private CancellationTokenSource CreateCts()
+        => _link ? CancellationTokenSource.CreateLinkedTokenSource(_linkedToken) : new CancellationTokenSource();
+
+    private static ValueTask Teardown(CancellationTokenSource cts)
+    {
+        try
+        {
+            Task cancellation = cts.CancelAsync();
+            if (!cancellation.IsCompletedSuccessfully)
+                return AwaitCancellationAndDispose(cancellation, cts);
+        }
+        catch
+        {
+            /* ignore */
+        }
+
+        cts.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private static async ValueTask AwaitCancellationAndDispose(Task cancellation, CancellationTokenSource cts)
+    {
+        try
+        {
+            await cancellation.ConfigureAwait(false);
+        }
+        catch
+        {
+            /* ignore */
+        }
+        finally
+        {
+            cts.Dispose();
+        }
+    }
+}
