@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Soenneker.Extensions.Task;
 
 namespace Soenneker.Utils.CancellationScopes;
 
@@ -14,6 +15,7 @@ internal static class CancellationTeardown
             if (!source.IsCancellationRequested)
             {
                 Task cancellation = source.CancelAsync();
+
                 if (!cancellation.IsCompletedSuccessfully)
                     return AwaitCancellationAndDispose(cancellation, source);
             }
@@ -31,7 +33,7 @@ internal static class CancellationTeardown
     {
         try
         {
-            await cancellation.ConfigureAwait(false);
+            await cancellation.NoSync();
         }
         catch
         {
