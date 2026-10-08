@@ -12,7 +12,7 @@ public sealed class CancellationLifetimeTests
     }
 
     [Test]
-    public async ValueTask Constructed_lifetime_has_one_token_that_stays_cancelled_after_disposal()
+    public async ValueTask Constructed_lifetime_has_one_token_that_stays_cancelled_after_disposal(CancellationToken cancellationToken)
     {
         var lifetime = new CancellationLifetime();
         CancellationToken token = lifetime.CancellationToken;
@@ -25,7 +25,7 @@ public sealed class CancellationLifetimeTests
     }
 
     [Test]
-    public async ValueTask Default_lifetime_is_an_empty_noop()
+    public async ValueTask Default_lifetime_is_an_empty_noop(CancellationToken cancellationToken)
     {
         CancellationLifetime lifetime = default;
         Check(lifetime.CancellationToken == CancellationToken.None, "Default token must be None");
@@ -34,7 +34,7 @@ public sealed class CancellationLifetimeTests
     }
 
     [Test]
-    public async ValueTask Copies_and_readonly_fields_share_the_same_cancellation()
+    public async ValueTask Copies_and_readonly_fields_share_the_same_cancellation(CancellationToken cancellationToken)
     {
         var owner = new CancellationLifetimeOwner();
         CancellationLifetime copy = owner.Lifetime;
@@ -46,7 +46,7 @@ public sealed class CancellationLifetimeTests
     }
 
     [Test]
-    public async ValueTask Parent_cancellation_propagates_and_child_cancellation_does_not_cancel_parent()
+    public async ValueTask Parent_cancellation_propagates_and_child_cancellation_does_not_cancel_parent(CancellationToken cancellationToken)
     {
         using var parent = new CancellationTokenSource();
         var child = new CancellationLifetime(parent.Token);
@@ -62,7 +62,7 @@ public sealed class CancellationLifetimeTests
     }
 
     [Test]
-    public async ValueTask Already_cancelled_parent_needs_no_live_child_and_can_already_be_disposed()
+    public async ValueTask Already_cancelled_parent_needs_no_live_child_and_can_already_be_disposed(CancellationToken cancellationToken)
     {
         var parent = new CancellationTokenSource();
         CancellationToken parentToken = parent.Token;
@@ -82,7 +82,7 @@ public sealed class CancellationLifetimeTests
     }
 
     [Test]
-    public async ValueTask Dispose_awaits_callbacks_started_by_that_disposal()
+    public async ValueTask Dispose_awaits_callbacks_started_by_that_disposal(CancellationToken cancellationToken)
     {
         var lifetime = new CancellationLifetime();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -90,21 +90,21 @@ public sealed class CancellationLifetimeTests
         using var registration = lifetime.CancellationToken.Register(() =>
         {
             entered.SetResult();
-            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+            if (!release.Wait(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken)) throw new TimeoutException();
         });
         Task disposing = lifetime.DisposeAsync().AsTask();
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
             Check(lifetime.CancellationToken.IsCancellationRequested, "Disposal did not request cancellation immediately");
             Check(!disposing.IsCompleted, "Disposal did not wait for its callbacks");
         }
         finally { release.Set(); }
-        await disposing.WaitAsync(TimeSpan.FromSeconds(5));
+        await disposing.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
     }
 
     [Test]
-    public async ValueTask Callback_failures_do_not_prevent_cancellation_or_disposal()
+    public async ValueTask Callback_failures_do_not_prevent_cancellation_or_disposal(CancellationToken cancellationToken)
     {
         var lifetime = new CancellationLifetime();
         using var registration = lifetime.CancellationToken.Register(() => throw new InvalidOperationException("callback"));

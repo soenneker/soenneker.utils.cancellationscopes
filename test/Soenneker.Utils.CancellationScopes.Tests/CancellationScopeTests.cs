@@ -14,7 +14,7 @@ public sealed class CancellationScopeTests
     }
 
     [Test]
-    public async ValueTask Cancel_before_first_access_does_not_cancel_a_future_generation()
+    public async ValueTask Cancel_before_first_access_does_not_cancel_a_future_generation(CancellationToken cancellationToken)
     {
         await using var scope = new CancellationScope();
         scope.Cancel();
@@ -24,7 +24,7 @@ public sealed class CancellationScopeTests
     }
 
     [Test]
-    public async ValueTask Cancel_keeps_the_same_token_until_reset()
+    public async ValueTask Cancel_keeps_the_same_token_until_reset(CancellationToken cancellationToken)
     {
         await using var scope = new CancellationScope();
         CancellationToken first = scope.CancellationToken;
@@ -37,7 +37,7 @@ public sealed class CancellationScopeTests
     }
 
     [Test]
-    public async ValueTask Reset_before_first_access_creates_a_generation()
+    public async ValueTask Reset_before_first_access_creates_a_generation(CancellationToken cancellationToken)
     {
         await using var scope = new CancellationScope();
         await scope.ResetCancellation();
@@ -46,7 +46,7 @@ public sealed class CancellationScopeTests
     }
 
     [Test]
-    public async ValueTask Each_generation_is_linked_to_the_parent()
+    public async ValueTask Each_generation_is_linked_to_the_parent(CancellationToken cancellationToken)
     {
         using var parent = new CancellationTokenSource();
         await using var scope = new CancellationScope(parent.Token);
@@ -60,7 +60,7 @@ public sealed class CancellationScopeTests
     }
 
     [Test]
-    public async ValueTask Disposed_scope_returns_none_and_cannot_be_recreated()
+    public async ValueTask Disposed_scope_returns_none_and_cannot_be_recreated(CancellationToken cancellationToken)
     {
         var scope = new CancellationScope();
         CancellationToken token = scope.CancellationToken;
@@ -76,7 +76,7 @@ public sealed class CancellationScopeTests
     }
 
     [Test]
-    public async ValueTask Throwing_callbacks_do_not_prevent_reset_or_disposal()
+    public async ValueTask Throwing_callbacks_do_not_prevent_reset_or_disposal(CancellationToken cancellationToken)
     {
         var scope = new CancellationScope();
         using var first = scope.CancellationToken.Register(() => throw new InvalidOperationException("callback"));
@@ -89,7 +89,7 @@ public sealed class CancellationScopeTests
     }
 
     [Test]
-    public async ValueTask Reset_publishes_replacement_before_waiting_for_old_callbacks()
+    public async ValueTask Reset_publishes_replacement_before_waiting_for_old_callbacks(CancellationToken cancellationToken)
     {
         await using var scope = new CancellationScope();
         CancellationToken first = scope.CancellationToken;
@@ -98,21 +98,21 @@ public sealed class CancellationScopeTests
         using var registration = first.Register(() =>
         {
             entered.SetResult();
-            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+            if (!release.Wait(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken)) throw new TimeoutException();
         });
         Task resetting = scope.ResetCancellation().AsTask();
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
             Check(!resetting.IsCompleted, "Reset did not await its callback");
             Check(scope.CancellationToken != first && !scope.CancellationToken.IsCancellationRequested, "Replacement was not published");
         }
         finally { release.Set(); }
-        await resetting.WaitAsync(TimeSpan.FromSeconds(5));
+        await resetting.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
     }
 
     [Test]
-    public async ValueTask Dispose_publishes_none_before_waiting_for_callbacks()
+    public async ValueTask Dispose_publishes_none_before_waiting_for_callbacks(CancellationToken cancellationToken)
     {
         var scope = new CancellationScope();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -120,32 +120,32 @@ public sealed class CancellationScopeTests
         using var registration = scope.CancellationToken.Register(() =>
         {
             entered.SetResult();
-            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+            if (!release.Wait(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken)) throw new TimeoutException();
         });
         Task disposing = scope.DisposeAsync().AsTask();
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
             Check(!disposing.IsCompleted, "Disposal did not await its callback");
             Check(scope.CancellationToken == CancellationToken.None, "Disposal did not close token publication");
             await scope.ResetCancellation();
         }
         finally { release.Set(); }
-        await disposing.WaitAsync(TimeSpan.FromSeconds(5));
+        await disposing.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
     }
 
     [Test]
-    public async ValueTask Cancellation_callbacks_can_reenter_the_scope()
+    public async ValueTask Cancellation_callbacks_can_reenter_the_scope(CancellationToken cancellationToken)
     {
         await using var scope = new CancellationScope();
         CancellationToken observed = default;
         using var registration = scope.CancellationToken.Register(() => observed = scope.CancellationToken);
-        await scope.ResetCancellation().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        await scope.ResetCancellation().AsTask().WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
         Check(observed == scope.CancellationToken && !observed.IsCancellationRequested, "Callback could not read replacement");
     }
 
     [Test]
-    public async ValueTask Concurrent_reads_resets_cancellation_and_disposal_do_not_throw_or_leak_live_tokens()
+    public async ValueTask Concurrent_reads_resets_cancellation_and_disposal_do_not_throw_or_leak_live_tokens(CancellationToken cancellationToken)
     {
         for (int iteration = 0; iteration < 20; iteration++)
         {
@@ -154,7 +154,7 @@ public sealed class CancellationScopeTests
             using var start = new ManualResetEventSlim();
             Task[] workers = Enumerable.Range(0, 4).Select(worker => Task.Run(async () =>
             {
-                start.Wait();
+                start.Wait(cancellationToken: cancellationToken);
                 for (int i = 0; i < 500; i++)
                 {
                     tokens.Add(scope.CancellationToken);
@@ -162,9 +162,9 @@ public sealed class CancellationScopeTests
                     if (worker == 1) scope.Cancel();
                     if (worker == 2 && i == 250) await scope.DisposeAsync();
                 }
-            })).ToArray();
+            }, cancellationToken: cancellationToken)).ToArray();
             start.Set();
-            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(10));
+            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken: cancellationToken);
             await scope.DisposeAsync();
             Check(scope.CancellationToken == CancellationToken.None, "Disposed scope was resurrected");
             Check(tokens.All(token => !token.CanBeCanceled || token.IsCancellationRequested), "A published generation escaped cleanup");
